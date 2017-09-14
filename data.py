@@ -49,6 +49,7 @@ class data(object):
 
         # class index from 0 - 15, good for softmax
         self.gnd_img = gnd_img - 1
+
     ## for testing ------------------------------------
         print('label min = %d, label max = %d'
               % (np.min(np.min(self.gnd_img)), np.max(np.max(self.gnd_img))))
@@ -66,7 +67,7 @@ class data(object):
 
         self.data_sets = self.get_train_valid_test()
         self.train_examples_number = self.data_sets[0].shape[0]
-
+        print('train sets numbers: %d'%(temp.shape[0]))
 
     def scale_to_unit_interval(self, ndar, eps=1e-8):
         """ Scales all values in the ndarray ndar to be between 0 and 1 """
@@ -74,7 +75,6 @@ class data(object):
         ndar -= ndar.min()
         ndar *= 1.0 / (ndar.max() + eps)
         return ndar
-
 
     def get_split_mask(self):
 
@@ -91,6 +91,21 @@ class data(object):
 
         return split_mask
 
+    def data_pca(self):
+
+        pca_components = self.pca_components
+        ##-------------
+        print('train data shape before pca:[%d,%d,%d]'
+              %(self.hsi_img.shape[0],self.hsi_img.shape[1],self.hsi_img.shape[2]))
+        ##-------------
+        # PCA the data
+        pca = PCA( n_components = pca_components)
+        pca_hsi_img = pca.fit_transform(np.reshape(self.hsi_img, [-1, self.hsi_img.shape[2]]))
+        pca_hsi_img = np.reshape(pca_hsi_img,[self.hsi_img.shape[0],self.hsi_img.shape[1],-1])
+
+        print('origin hsi image shape:',(pca_hsi_img.shape))
+
+        return pca_hsi_img
 
     def get_train_valid_test(self):
 
@@ -111,6 +126,7 @@ class data(object):
 
 
         #construct the img patches
+
         r = self.image_size//2
         print('half of the window:',r)
 
@@ -122,8 +138,7 @@ class data(object):
             for j in range(split_mask.shape[1]-2*r):
                  new_pca_hsi_img[i+r,j+r,:] = np.reshape(pca_hsi_img[i:i+2*r+1,j:j+2*r+1],[-1,])
 
-
-
+        self.img_size_flat = new_pca_hsi_img.shape[2]
         #cut edge
         split_mask = split_mask[2:split_mask.shape[0]-2,2:split_mask.shape[1]-2]
         gnd_img = self.gnd_img[2:self.gnd_img.shape[0]-2,2:self.gnd_img.shape[1]-2]
@@ -175,9 +190,7 @@ class data(object):
               % (train_data_x.shape[0], valid_data_x.shape[0], test_data_x.shape[0]))
 
 
-
         # modify the data to 4D tensor, labels to one-hot labels
-
         print('origin train label index one: %d'%train_data_y[0])
         train_data_y = tf.one_hot(
             train_data_y,
@@ -191,18 +204,42 @@ class data(object):
         print('one hot train label index one: ',(tf.Session().run(train_data_y[0])))
         print('train_set labels shape:',train_data_y.shape)
 
-        return [train_data_x,train_data_y,valid_data_x,valid_data_y,test_data_x,test_data_y]
+        valid_data_y = tf.one_hot(
+            valid_data_y,
+            self.class_number,
+            on_value=None,
+            off_value=None,
+            axis=-1,
+            dtype=None,
+            name=None
+            )
+
+        test_data_y = tf.one_hot(
+            test_data_y,
+            self.class_number,
+            on_value=None,
+            off_value=None,
+            axis=-1,
+            dtype=None,
+            name=None
+            )
+
+        return [train_data_x,tf.Session().run(train_data_y),
+                valid_data_x,tf.Session().run(valid_data_y),
+                test_data_x,tf.Session().run(test_data_y)]
 
     def next_batch(self):
         start = self.idx_in_epoch
         self.idx_in_epoch +=self.batch_size
 
-        if self.idx_in_epoch >self.train_examples_number:
+        if self.idx_in_epoch > self.train_examples_number:
 
             self.epoch_num = self.epoch_num+1
 
-            perm = np.array(self.train_examples_number)
+            perm = np.arange(self.train_examples_number)
+
             np.random.shuffle(perm)
+
             self.data_sets[0]=self.data_sets[0][perm]
             self.data_sets[1]=self.data_sets[1][perm]
 
@@ -212,11 +249,8 @@ class data(object):
             assert self.idx_in_epoch<=self.batch_size
 
         end = self.idx_in_epoch
-
-        print('start idx = %d, end idx = %d'%(start,end))
-
+        # print('start idx = %d, end idx = %d'%(start,end))
         return self.data_sets[0][start:end,:],self.data_sets[1][start:end]
-
 
     if __name__ == '__main__':
 
